@@ -1333,7 +1333,7 @@ class Recommend(Base):
 
     def test_hardware_here(self):
         hw = hardware.detect([self.parent])
-        self.assertIn(hw['os'], ('macos', 'windows'))
+        self.assertIn(hw['os'], ('macos', 'windows', 'linux'))
         self.assertGreater(hw['ram_bytes'], 2 ** 30)
         self.assertTrue(hw['disks'] and hw['disks'][0]['free_bytes'] > 0)
 

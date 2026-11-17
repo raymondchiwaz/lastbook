@@ -140,9 +140,9 @@ const Chat = (() => {
     box.innerHTML = l.state === 'off'
       ? `<p>The local AI is turned off.</p><div class="row"><button class="btn" data-ai="on">Turn on</button></div>`
       : l.state === 'error' ? `<p>${esc(l.message || 'The local AI could not start.')}</p><div class="row"><button class="btn" data-ai="rescan">Look again</button></div>`
-      : `<p><b>Add the local AI to get written answers.</b> It is about 17 GB, and runs on this computer only.</p>
+      : `<p><b>Add the local AI to get written answers.</b> It is about ${esc((l.size / 1e9).toFixed(1))} GB, and runs on this computer only.</p>
          <div class="row"><a class="btn" href="/ui/setup.html#manage">Add the local AI</a><button class="btn plain" data-ai="rescan">Look again</button></div>
-         <p class="small">Already downloaded <code>${esc(l.file)}</code>? Put it in your <b>LastbookData</b> folder or Downloads, then Look again.</p>`;
+         <p class="small">Already downloaded <code>${esc(l.file)}</code>? Put it in your <b>LastbookData/models</b> folder, then Look again.</p>`;
     $$('[data-ai]', box).forEach(b => b.onclick = async () => {
       b.disabled = true;
       try { await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: b.dataset.ai }) }) } catch { }

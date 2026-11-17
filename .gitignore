@@ -17,5 +17,6 @@ build/
 *.onnx
 *.zim
 *.dmg
+.venv-low-vram/
 *.exe
 *.zip

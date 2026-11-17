@@ -1,13 +1,13 @@
-"""The optional local AI: Gemma 4 26B A4B run on this computer by lastbook-llm, a program of ours that speaks only through pipes.
+"""The optional local AI: Gemma 4, or a small Qwen model in the low-vram profile, run by lastbook-llm through pipes.
 
 Nothing here opens a socket or reaches past this computer. The model is a file the person downloads from the website, outside the
 app. Lastbook finds it inside the selected library or an explicitly configured model folder, checks the published file, asks llama.cpp
 whether it fits this computer's memory, and starts it when someone asks a question. It stops after IDLE_STOP seconds unused,
 when turned off, and when the app quits (the program leaves when its standard input closes).
 
-assistant.py calls round() for each model turn, with OpenAI-shaped messages. This file turns them into Gemma 4's own prompt
-format, sends that as segments (template markup, where special tokens count, or plain text, where they never do: a document
-cannot start a turn of its own), and turns Gemma's tool calls back into the shape assistant.py already handles.
+assistant.py supplies OpenAI-shaped messages. This file renders the selected model's prompt format as segments (template
+markup, where special tokens count, or plain text, where they never do: a document cannot start a turn of its own), and
+turns the model's tool calls back into the shape assistant.py already handles.
 """
 import hashlib
 import json
@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from engine import paths
@@ -27,11 +28,69 @@ SHA256 = 'f2c28b3dc4776931ac6f879e11f203dec637ea0f14267a86ec8f6165f63f293f'
 NAME = 'Gemma 4 26B A4B (Unsloth 4-bit, UD-Q4_K_M)'
 SOURCE = 'unsloth/gemma-4-26B-A4B-it-GGUF, revision c099eb48e663fd284577b04978a94ffccb261841'
 CTX = 16384               # tokens the model holds: the system prompt, sources, the conversation and the answer
+PROFILE = os.environ.get('LASTBOOK_AI_PROFILE', 'standard')
+if PROFILE not in ('standard', 'low-vram'):
+    raise ValueError('LASTBOOK_AI_PROFILE must be standard or low-vram')
+LOW_VRAM = PROFILE == 'low-vram'
+SMALL_MODEL = os.environ.get('LASTBOOK_AI_MODEL', 'qwen3.5-2b')
+QWEN35 = LOW_VRAM and SMALL_MODEL.startswith('qwen3.5-')
+MINICPM = LOW_VRAM and SMALL_MODEL == 'minicpm5-2b'
+GPU_RESERVE_MB = 512
+MODEL_ID = 'gemma-4-26b-a4b'
+MODEL_TITLE = 'Gemma 4 26B A4B'
+TOOL_MARKER = '<|tool_call>'
+MAX_TOKENS = 1800
+if LOW_VRAM:
+    FILE = 'qwen2.5-1.5b-instruct-q4_k_m.gguf'
+    SIZE = 1_117_320_736
+    SHA256 = '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e'
+    NAME = 'Qwen2.5 1.5B Instruct (4-bit, low VRAM)'
+    SOURCE = 'Qwen/Qwen2.5-1.5B-Instruct-GGUF, revision 91cad51170dc346986eccefdc2dd33a9da36ead9'
+    MODEL_ID, MODEL_TITLE = 'qwen2.5-1.5b-q4-k-m', 'Qwen2.5 1.5B Instruct (low VRAM)'
+    CTX, MAX_TOKENS, TOOL_MARKER = 4096, 768, '<tool_call>'
+    if SMALL_MODEL == 'qwen3.5-2b':
+        FILE, SIZE = 'Qwen3.5-2B-Q4_K_M.gguf', 1_280_835_840
+        SHA256 = 'aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223'
+        SOURCE = 'unsloth/Qwen3.5-2B-GGUF, revision f6d5376be1edb4d416d56da11e5397a961aca8ae'
+        NAME = 'Qwen3.5 2B (4-bit, low VRAM)'
+        MODEL_ID, MODEL_TITLE = 'qwen3.5-2b-q4-k-m', NAME
+    elif SMALL_MODEL == 'qwen3.5-0.8b':
+        FILE, SIZE = 'Qwen3.5-0.8B-Q8_0.gguf', 833_592_096
+        SHA256 = '37ae482d336108d23516fa35e8e0c4126688d81018b87178a18d752a1357814f'
+        SOURCE = 'ggml-org/Qwen3.5-0.8B-GGUF, revision 004fd086eccea9f7cf867aa07ba328773beef81d'
+        NAME = 'Qwen3.5 0.8B (8-bit, extra VRAM headroom)'
+        MODEL_ID, MODEL_TITLE = 'qwen3.5-0.8b-q8-0', NAME
+    elif SMALL_MODEL == 'qwen3.5-2b-abliterated':
+        FILE, SIZE = 'Huihui-Qwen3.5-2B-abliterated.Q4_K_M.gguf', 1_270_809_024
+        SHA256 = 'aa25eea787afe56a097268f7ed3460cb623e1901d2e89cd2b654cabb42f80636'
+        SOURCE = 'mradermacher/Huihui-Qwen3.5-2B-abliterated-GGUF, revision 7f5aee7d2dc4df18bd67eab85ea81e0bc2e98a2c'
+        NAME = 'Huihui Qwen3.5 2B Abliterated (4-bit)'
+        MODEL_ID, MODEL_TITLE = 'huihui-qwen3.5-2b-abliterated-q4-k-m', NAME
+    elif SMALL_MODEL == 'minicpm5-2b':
+        FILE, SIZE = 'MiniCPM5-2B-Q4_K_M.gguf', 1_561_318_368
+        SHA256 = 'ec2d5801640099e97d8d7e8003ad4d81f336e757811f03a26173dddf386602fd'
+        SOURCE = 'openbmb/MiniCPM5-2B-GGUF, revision 8ad02b786ab81e33d465e1c80562640c55ab2877'
+        NAME = 'MiniCPM5 2B (4-bit, agent tools)'
+        MODEL_ID, MODEL_TITLE = 'minicpm5-2b-q4-k-m', NAME
+        CTX, MAX_TOKENS, GPU_RESERVE_MB, TOOL_MARKER = 3072, 512, 256, '<function'
+    elif SMALL_MODEL != 'qwen2.5-1.5b':
+        raise ValueError('Unknown LASTBOOK_AI_MODEL; see run-low-vram.sh --help for model choices')
 RESERVE = 2.5 * 2**30     # memory left for the system and the rest of Lastbook beyond what llama.cpp measures for the model
 IDLE_STOP = int(os.environ.get('LASTBOOK_AI_IDLE_S') or 15 * 60)   # seconds without a question before the model is stopped, to give its memory back
 START_WAIT = 600          # longest a question waits for the model to load
 
 STATE_FILE = paths.DATA / 'derived' / 'llm' / 'state.json'   # where the file was found, its check, the on/off setting
+
+
+def runner_args(model, extra=()):
+    """Use identical memory settings for setup's measurement and the actual process."""
+    threads = max(1, min(8 if LOW_VRAM else 16, (os.cpu_count() or 4) // 2))
+    args = ['--model', str(model), '--ctx', str(CTX), '--threads', str(threads)]
+    if LOW_VRAM:
+        args += ['--batch', '128', '--ubatch', '64', '--gpu-reserve-mb', str(GPU_RESERVE_MB)]
+    if os.environ.get('LASTBOOK_AI_CPU_ONLY') == '1':
+        args += ['--cpu-only']
+    return args + list(extra)
 
 
 def runner_path():
@@ -121,6 +180,7 @@ class Local:
         with self.lock:
             fit = self.fit or {}
             return {'name': NAME, 'file': FILE, 'size': SIZE, 'state': self.state, 'pct': self.pct, 'message': self.message,
+                    'idle_s': IDLE_STOP, 'profile': PROFILE,
                     'found_at': self.path and _folder_name(self.path), 'enabled': self.enabled(), 'runtime': bool(self.runner),
                     'needs_bytes': fit.get('needs'), 'ram_total': fit.get('ram_total'), 'placement': fit.get('placement'),
                     'load_s': (self.ready_info or {}).get('load_s'), 'places': [_folder_name(p) for p in places()[:6]]}
@@ -234,8 +294,7 @@ class Local:
                 self.state, self.message = 'too_big', self.fit['why']
 
     def _argv(self, extra=()):
-        threads = max(4, min(16, (os.cpu_count() or 8) // 2))   # about the number of performance cores; more only contend
-        return [str(self.runner), '--model', str(self.path), '--ctx', str(CTX), '--threads', str(threads), *extra]
+        return [str(self.runner), *runner_args(self.path, extra)]
 
     # -- running ----------------------------------------------------------------------------------------------------------
     def ensure_running(self, on_wait=None, cancelled=lambda: False):
@@ -373,7 +432,9 @@ class Local:
             while not events.empty():       # anything left from an answer that was stopped
                 events.get_nowait()
             req = {'op': 'gen', 'id': rid, 'segments': segments, 'max_tokens': max_tokens, 'temp': 0.2, 'top_k': 64, 'top_p': 0.95,
-                   'min_p': 0.05, 'seed': 1234 + rid, 'stop': ['<|tool_response>']}
+                   'min_p': 0.05, 'seed': 1234 + rid, 'stop': [] if LOW_VRAM else ['<|tool_response>']}
+            if MINICPM:
+                req.update(temp=1.0, min_p=0.0)  # publisher's recommended sampling
             try:
                 proc.stdin.write((json.dumps(req, ensure_ascii=False) + '\n').encode('utf-8'))
             except OSError:
@@ -504,7 +565,7 @@ def declaration(tool):
     return s + '}'
 
 
-def render(msgs, tools):
+def _render_gemma(msgs, tools):
     """OpenAI-shaped messages to Gemma 4 segments, as the model's chat template lays them out, with thinking off.
     System messages before the model's first reply in this turn go together at the top, as the evaluation gave them:
     instructions, then the sources, then the question."""
@@ -570,6 +631,92 @@ def render(msgs, tools):
     return seg
 
 
+def render(msgs, tools):
+    if not LOW_VRAM:
+        return _render_gemma(msgs, tools)
+    # ChatML formats. Source text stays in non-special segments, as for Gemma.
+    top = '\n\n'.join(_text(m).strip() for m in msgs if m['role'] == 'system')
+    if tools and MINICPM:
+        top += ('\n\n# Tools\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n'
+                + '\n'.join(json.dumps(t, ensure_ascii=False) for t in tools)
+                + '\n</tools>\n\nTool usage guidelines:\n'
+                '- You may call zero or more functions. If no calls are needed, answer normally and do not include function markup.\n'
+                '- When calling a function, return an XML object using:\n'
+                '<function name="function-name"><param name="param-name">param-value</param></function>\n'
+                '- param-value may be multi-line. If it contains <, & or newline characters, wrap it in a CDATA block: '
+                '<param name="param-name"><![CDATA[...multi-line value...]]></param>')
+    elif tools and QWEN35:
+        top = ('# Tools\n\nYou have access to the following functions:\n\n<tools>\n'
+               + '\n'.join(json.dumps(t, ensure_ascii=False) for t in tools)
+               + '\n</tools>\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n'
+               '<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n'
+               '</parameter>\n</function>\n</tool_call>\n\n'
+               'Function calls MUST use an inner <function=...></function> block inside <tool_call></tool_call>. '
+               'Required parameters MUST be specified. You may explain a call BEFORE it, but NOT after. '
+               'When no call is needed, answer normally from the supplied sources.\n\n' + top)
+    elif tools:
+        top += ('\n\n# Tools\nYou may call one or more functions to assist with the user query.\n'
+                'You are provided with function signatures within <tools></tools> XML tags:\n<tools>\n'
+                + '\n'.join(json.dumps(t, ensure_ascii=False) for t in tools)
+                + '\n</tools>\nFor each function call, return a json object with function name and arguments '
+                'within <tool_call></tool_call> XML tags:\n<tool_call>\n'
+                '{"name": <function-name>, "arguments": <args-json-object>}\n</tool_call>')
+    seg = [['<|im_start|>system\n', True], [top, False], ['<|im_end|>\n', True]]
+    rest = [m for m in msgs if m['role'] != 'system']
+    for i, m in enumerate(rest):
+        role = m['role']
+        if role == 'tool':
+            if i == 0 or rest[i - 1]['role'] != 'tool':
+                seg.append(['<|im_start|>user', True])
+            seg += [['\n<tool_response>\n', True], [_text(m), False], ['\n</tool_response>', True]]
+            if i + 1 == len(rest) or rest[i + 1]['role'] != 'tool':
+                seg.append(['<|im_end|>\n', True])
+            continue
+        if role not in ('user', 'assistant'):
+            continue
+        history_prefix = f'<|im_start|>{role}\n'
+        if role == 'assistant' and MINICPM:
+            history_prefix += '<think>\n\n</think>\n\n'
+        seg += [[history_prefix, True], [_text(m), False]]
+        for call in m.get('tool_calls') or []:
+            f = call['function']
+            args = f.get('arguments') or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except ValueError:
+                    args = {}
+            if MINICPM:
+                seg.append(['\n<function name="' + f['name'] + '">', True])
+                for key, value in args.items():
+                    value = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
+                    value = '<![CDATA[' + value.replace(']]>', ']]]]><![CDATA[>') + ']]>'
+                    seg += [['<param name="' + key + '">', True], [value, False], ['</param>', True]]
+                seg.append(['</function>', True])
+            elif QWEN35:
+                seg.append(['\n<tool_call>\n<function=' + f['name'] + '>\n', True])
+                for key, value in args.items():
+                    value = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
+                    seg += [['<parameter=' + key + '>\n', True], [value, False], ['\n</parameter>\n', True]]
+                seg.append(['</function>\n</tool_call>', True])
+            else:
+                seg += [['\n<tool_call>\n', True],
+                        [json.dumps({'name': f['name'], 'arguments': args}, ensure_ascii=False), False],
+                        ['\n</tool_call>', True]]
+        seg.append(['<|im_end|>\n', True])
+    prefix = '<|im_start|>assistant\n' + ('<think>\n\n</think>\n\n' if QWEN35 or MINICPM else '')
+    return seg + [[prefix, True]]
+
+
+def visible_text(text):
+    """Hide calls, including an opening tag arriving across multiple streamed tokens."""
+    text = text.split(TOOL_MARKER, 1)[0]
+    for n in range(len(TOOL_MARKER) - 1, 0, -1):
+        if text.endswith(TOOL_MARKER[:n]):
+            return text[:-n].lstrip()
+    return text.lstrip()
+
+
 def _text(m):
     c = m.get('content')
     if isinstance(c, str):
@@ -594,6 +741,52 @@ CALL = re.compile(r'<\|tool_call>call:([A-Za-z_][\w.-]*)\{(.*?)\}<tool_call\|>',
 
 def parse_calls(text):
     """(text before the first call, [(name, arguments dict)]) from what the model wrote."""
+    if MINICPM:
+        calls = []
+        for body in re.findall(r'<function\s+name=[\"\'].*?</function>', text, re.S):
+            try:
+                node = ET.fromstring(body)
+            except ET.ParseError:
+                continue
+            name = node.get('name', '')
+            if not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
+                continue
+            args = {}
+            for param in node:
+                key = param.get('name', '')
+                if param.tag != 'param' or not re.fullmatch(r'[A-Za-z_][\w.-]*', key) or len(param):
+                    break
+                value = (param.text or '').strip()
+                try:
+                    args[key] = json.loads(value)
+                except ValueError:
+                    args[key] = value
+            else:
+                calls.append((name, args))
+        return text.split(TOOL_MARKER, 1)[0], calls
+    if LOW_VRAM:
+        calls = []
+        for body in re.findall(r'<tool_call>(.*?)</tool_call>', text, re.S):
+            if QWEN35:
+                match = re.fullmatch(r'\s*<function=([A-Za-z_][\w.-]*)>(.*?)</function>\s*', body, re.S)
+                if not match:
+                    continue
+                args = {}
+                for key, value in re.findall(r'<parameter=([A-Za-z_][\w.-]*)>(.*?)</parameter>', match[2], re.S):
+                    value = value.strip()
+                    try:
+                        args[key] = json.loads(value)
+                    except ValueError:
+                        args[key] = value
+                calls.append((match[1], args))
+                continue
+            try:
+                call = json.loads(body)
+                if isinstance(call, dict) and isinstance(call.get('name'), str) and isinstance(call.get('arguments'), dict):
+                    calls.append((call['name'], call['arguments']))
+            except ValueError:
+                continue
+        return text.split(TOOL_MARKER, 1)[0], calls
     calls = []
     for m in CALL.finditer(text):
         try:

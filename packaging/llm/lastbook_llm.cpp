@@ -1,7 +1,7 @@
 // lastbook-llm: runs one local language model for the Lastbook app. It talks only through its standard input and output,
 // one JSON object per line, and never opens a socket, a port or a web address. It reads one file, the model it is given.
 //
-//   lastbook-llm --model FILE [--ctx N] [--threads N] [--cpu-only] [--measure]
+//   lastbook-llm --model FILE [--ctx N] [--threads N] [--batch N] [--ubatch N] [--gpu-reserve-mb N] [--cpu-only] [--measure]
 //
 // On start it fits the model to this computer's memory with llama.cpp's own fitting (common/fit.cpp, the same as llama-server's
 // default --fit), prints {"ev":"fit",...} with what it measured, then loads the model and prints {"ev":"ready",...}.
@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
@@ -390,7 +391,7 @@ int main(int argc, char ** argv) {
     g_out = fdopen(proto, "w");
 #endif
     std::string path;
-    int n_ctx = 16384, threads = 0;
+    int n_ctx = 16384, threads = 0, batch = 2048, ubatch = 512, gpu_reserve_mb = 1024;
     bool cpu_only = false, measure = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -400,6 +401,16 @@ int main(int argc, char ** argv) {
             n_ctx = std::atoi(argv[++i]);
         } else if (a == "--threads" && i + 1 < argc) {
             threads = std::atoi(argv[++i]);
+        } else if ((a == "--batch" || a == "--ubatch" || a == "--gpu-reserve-mb") && i + 1 < argc) {
+            char * end = nullptr;
+            long value = std::strtol(argv[++i], &end, 10);
+            if (!*argv[i] || *end || value < 1 || value > INT_MAX) {
+                send({{"ev", "error"}, {"code", "usage"}, {"msg", "expected a positive integer for " + a}});
+                return 2;
+            }
+            if (a == "--batch") batch = (int) value;
+            if (a == "--ubatch") ubatch = (int) value;
+            if (a == "--gpu-reserve-mb") gpu_reserve_mb = (int) value;
         } else if (a == "--cpu-only") {
             cpu_only = true;
         } else if (a == "--measure") {
@@ -409,8 +420,8 @@ int main(int argc, char ** argv) {
             return 2;
         }
     }
-    if (path.empty()) {
-        send({{"ev", "error"}, {"code", "usage"}, {"msg", "--model FILE is required"}});
+    if (path.empty() || n_ctx < 32 || threads < 0 || ubatch > batch) {
+        send({{"ev", "error"}, {"code", "usage"}, {"msg", "a model, ctx >= 32, threads >= 0 and ubatch <= batch are required"}});
         return 2;
     }
     llama_log_set(log_to_stderr, nullptr);
@@ -422,8 +433,8 @@ int main(int argc, char ** argv) {
     llama_model_params mp = llama_model_default_params();
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
-    cp.n_batch = 2048;
-    cp.n_ubatch = 512;
+    cp.n_batch = batch;
+    cp.n_ubatch = ubatch;
     cp.n_seq_max = 1;
     if (threads > 0) {
         cp.n_threads = cp.n_threads_batch = threads;
@@ -441,7 +452,7 @@ int main(int argc, char ** argv) {
     // Fit: only settings left at llama.cpp's defaults are changed, and the context stays the size asked for.
     std::vector<float> split(llama_max_devices(), 0.0f);
     std::vector<llama_model_tensor_buft_override> overrides(llama_max_tensor_buft_overrides());
-    std::vector<size_t> margins(llama_max_devices(), (size_t) 1024 * 1024 * 1024);
+    std::vector<size_t> margins(llama_max_devices(), (size_t) gpu_reserve_mb * 1024 * 1024);
     auto t_fit = std::chrono::steady_clock::now();
     common_params_fit_status st = COMMON_PARAMS_FIT_STATUS_SUCCESS;
     if (!cpu_only) {

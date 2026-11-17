@@ -266,8 +266,7 @@ def measure_ai(llm_local, model_path, timeout=180):
     runner = llm_local.runner_path()
     if not runner or not Path(model_path).is_file():
         return None
-    threads = max(4, min(16, (os.cpu_count() or 8) // 2))
-    argv = [str(runner), '--model', str(model_path), '--ctx', str(llm_local.CTX), '--threads', str(threads), '--measure']
+    argv = [str(runner), *llm_local.runner_args(model_path, ['--measure'])]
     kw = {'creationflags': 0x08000000} if os.name == 'nt' else {}     # CREATE_NO_WINDOW
     try:
         out = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, **kw)

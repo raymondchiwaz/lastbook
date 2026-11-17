@@ -2,6 +2,7 @@
 from the download site when setup is opened. A fetched one is used only if it parses, says version 1 and every address in it is
 allowed (download.url_allowed)."""
 import json
+import os
 import re
 import sys
 import threading
@@ -131,6 +132,19 @@ class Manifest:
         self.source = 'bundled'
         self.remote, self.allowed, self.context = remote, allowed, context
         self.fetching = None
+        self._apply_profile()
+
+    def _apply_profile(self):
+        # A profile owns its model pins. A site manifest must never replace the small model with Gemma.
+        if os.environ.get('LASTBOOK_AI_PROFILE') != 'low-vram' or self.allowed is not None:
+            return
+        import llm_local
+        repo, revision = llm_local.SOURCE.split(', revision ')
+        entry = {'id': llm_local.MODEL_ID, 'title': llm_local.MODEL_TITLE, 'file': llm_local.FILE,
+                 'url': f'https://huggingface.co/{repo}/resolve/{revision}/{llm_local.FILE}?download=true',
+                 'size': llm_local.SIZE, 'sha256': llm_local.SHA256,
+                 'memory_bytes': 2 * 1024**3, 'available': True}  # conservative estimate; measured once downloaded
+        self.current = dict(self.current, models=[entry])
 
     def fetch_once(self):
         if self.fetching or not self.remote:
@@ -148,6 +162,7 @@ class Manifest:
             m = None
         if m:      # merge() keeps every pinned entry, so a fetched copy can only add or mark available, whatever its date
             self.current, self.source = merge(self.current, m), 'fetched'
+            self._apply_profile()
 
     def pack(self, pid):
         return next((p for p in self.current['packs'] if p['id'] == pid), None)

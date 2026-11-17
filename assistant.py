@@ -449,12 +449,12 @@ def _local_round(msgs, tools, cancelled, wrote, set_state):
 
     def piece(t):   # the person sees the answer as it is written, up to the first tool call, which is markup
         text[0] += t
-        visible = text[0].split('<|tool_call>', 1)[0].lstrip()
+        visible = llm_local.visible_text(text[0])
         if len(visible) > sent[0]:
             wrote(visible[sent[0]:])
             sent[0] = len(visible)
     try:
-        done = LOCAL.generate(segs, ROUND_TOKENS, cancelled, piece)
+        done = LOCAL.generate(segs, llm_local.MAX_TOKENS, cancelled, piece)
     except RuntimeError as e:
         return str(e)
     if done.get('reason') == 'cancel':
@@ -467,7 +467,7 @@ def _local_round(msgs, tools, cancelled, wrote, set_state):
 def _fit_prompt(msgs, tools, llm_local):
     """The prompt in Gemma's segments, short enough to leave room for the answer: the oldest past questions and answers go
     first, then the longest tool results are shortened. None if even that is too long."""
-    room = llm_local.CTX - ROUND_TOKENS - 64
+    room = llm_local.CTX - llm_local.MAX_TOKENS - 64
     work = [dict(m) for m in msgs]
     while True:
         segs = llm_local.render(work, tools)

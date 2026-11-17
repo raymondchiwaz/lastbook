@@ -79,3 +79,19 @@ There is no published iPad build. These parts go into an iPad app that a contrib
 The manuals, videos, encyclopedias and map data in the library packs are not part of this repository. Each pack has a
 Sources and permissions page with the publisher and terms of every item. The offline map uses OpenStreetMap data
 (ODbL, © OpenStreetMap contributors) and US government data such as USGS, NOAA and USACE, as credited on the map.
+
+## Optional low-VRAM model
+
+The low-VRAM profile downloads one selected model separately during setup. All are Apache License 2.0 and none of their
+weights are redistributed with this source checkout. Exact revisions, filenames and SHA-256 checksums are in `llm_local.py`.
+
+| Model | Weight publisher | Model and licence |
+| --- | --- | --- |
+| Qwen3.5 2B, Q4_K_M | unsloth/Qwen3.5-2B-GGUF | https://huggingface.co/Qwen/Qwen3.5-2B |
+| Qwen3.5 0.8B, Q8_0 | ggml-org/Qwen3.5-0.8B-GGUF | https://huggingface.co/Qwen/Qwen3.5-0.8B |
+| Qwen2.5 1.5B Instruct, Q4_K_M | Qwen/Qwen2.5-1.5B-Instruct-GGUF | https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF |
+| Huihui Qwen3.5 2B Abliterated, Q4_K_M | mradermacher/Huihui-Qwen3.5-2B-abliterated-GGUF | https://huggingface.co/huihui-ai/Huihui-Qwen3.5-2B-abliterated |
+| MiniCPM5 2B, Q4_K_M | openbmb/MiniCPM5-2B-GGUF | https://huggingface.co/openbmb/MiniCPM5-2B |
+
+The MiniCPM prompt renderer follows the publisher's Apache-2.0 chat template:
+https://huggingface.co/openbmb/MiniCPM5-2B/blob/42433e90dad95123ab87729fd7011e7110629556/chat_template.jinja

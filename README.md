@@ -1,5 +1,11 @@
 # Lastbook
 
+**Linux with a 2 GB graphics card:** this checkout includes a small local AI profile and installer.
+Run `bash install-low-vram.sh`, then `bash run-low-vram.sh`. See [the setup guide](docs/LINUX-2GB.md)
+for optional GPU acceleration, system requirements and validation limits.
+Use `bash run-low-vram.sh --abliterated` for Huihui Qwen3.5 2B, or `bash run-low-vram.sh --agent`
+for MiniCPM5 2B. Quit the app before switching models; setup downloads the selected model separately.
+
 Lastbook is an offline survival library for Mac, Windows and Linux. It puts manuals, videos, encyclopedias, an offline map and
 short practical guides on one computer. After setup, it works offline. The desktop sidebar opens Videos, Map and Chat.
 Chat answers questions using the library and links to its sources.

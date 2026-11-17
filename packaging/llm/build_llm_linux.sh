@@ -9,6 +9,8 @@
 #   bash packaging/llm/build_llm_linux.sh
 # W  Work folder (default derived/llm). llama.cpp is cloned into W/llama.cpp at the tag if it is not there.
 # Output: W/bin-linux/lastbook-llm, the .so files beside it, LICENSE and notices, deps.txt (what each file needs), SHA256SUMS.txt
+# VULKAN=OFF builds a CPU-only runner (no Vulkan SDK required). JOBS limits build RAM use.
+# CPU_VARIANTS=OFF builds one portable CPU backend instead of every architecture variant.
 set -euo pipefail
 HERE="$(dirname "$(realpath "$0")")"
 ROOT="$(dirname "$(dirname "$HERE")")"
@@ -18,6 +20,10 @@ W="$(realpath -m "${W:-$ROOT/derived/llm}")"
 L="$W/llama.cpp"
 B="$W/build-linux"
 O="$W/bin-linux"
+VULKAN="${VULKAN:-ON}"
+CPU_VARIANTS="${CPU_VARIANTS:-ON}"
+JOBS="${JOBS:-$(nproc)}"
+case "$VULKAN:$CPU_VARIANTS" in ON:ON|ON:OFF|OFF:ON|OFF:OFF) ;; *) echo "VULKAN and CPU_VARIANTS must be ON or OFF" >&2; exit 1 ;; esac
 case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "build on x86_64 or aarch64 Linux" >&2; exit 1 ;; esac
 mkdir -p "$W" "$B" "$O"
 rm -f "$O"/*
@@ -27,15 +33,18 @@ rm -f "$O"/*
 
 MAP="-ffile-prefix-map=$L=llama.cpp -ffile-prefix-map=$HERE=lastbook-llm -ffile-prefix-map=$B=build"   # no folder of this machine inside
 cmake -S "$L" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
-  -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DGGML_NATIVE=OFF -DGGML_OPENMP=ON \
-  -DGGML_VULKAN=ON -DGGML_RPC=OFF -DGGML_CCACHE=OFF \
+  -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS="$CPU_VARIANTS" -DGGML_NATIVE=OFF -DGGML_OPENMP=ON \
+  -DGGML_VULKAN="$VULKAN" -DGGML_RPC=OFF -DGGML_CCACHE=OFF \
   -DLLAMA_BUILD_COMMON=OFF -DLLAMA_BUILD_TOOLS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF \
   -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF \
   -DCMAKE_SKIP_BUILD_RPATH=OFF -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DCMAKE_INSTALL_RPATH='$ORIGIN' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--enable-new-dtags" -DCMAKE_MODULE_LINKER_FLAGS="-Wl,--enable-new-dtags" \
   -DCMAKE_C_FLAGS="$MAP" -DCMAKE_CXX_FLAGS="$MAP" > "$W/cmake-linux.log"
 # Only the libraries: the default target also builds llama.cpp's own app, which downloads. One library per CPU variant.
-CPUS="$(cmake --build "$B" --target help | grep -oE '^ggml-cpu-[a-z0-9_.]+' | sort -u | tr '\n' ' ')"
-cmake --build "$B" -j "$(nproc)" --target llama ggml-vulkan $CPUS > "$W/build-linux.log"
+CPUS="$(cmake --build "$B" --target help | { grep -oE '^ggml-cpu-[a-z0-9_.]+' || true; } | sort -u | tr '\n' ' ')"
+if [ "$CPU_VARIANTS" = OFF ]; then CPUS=ggml-cpu; fi
+TARGETS=(llama)
+if [ "$VULKAN" = ON ]; then TARGETS+=(ggml-vulkan); fi
+cmake --build "$B" -j "$JOBS" --target "${TARGETS[@]}" $CPUS > "$W/build-linux.log"
 
 # fit_unused_win.cpp: GNU ld, like the Windows linker, wants every reference in fit.cpp resolved.
 g++ -std=c++17 -O3 -DNDEBUG $MAP \
@@ -49,7 +58,8 @@ g++ -std=c++17 -O3 -DNDEBUG $MAP \
 for f in "$B"/bin/libllama.so "$B"/bin/libggml.so "$B"/bin/libggml-base.so; do
   cp -L "$f" "$O/$(objdump -p "$f" | sed -n 's/^ *SONAME *//p')"
 done
-cp "$B"/bin/libggml-vulkan.so "$B"/bin/libggml-cpu-*.so "$O/"
+if [ "$VULKAN" = ON ]; then cp "$B/bin/libggml-vulkan.so" "$O/"; fi
+cp "$B"/bin/libggml-cpu*.so "$O/"
 strip -s "$O"/*.so*
 cp "$L/LICENSE" "$O/LICENSE-llama.cpp.txt"
 cat > "$O/NOTICE.txt" <<EOF
