@@ -25,17 +25,25 @@ const MapView = (() => {
     ['pharmacy', 'Pharmacies', 'Rx', '#2e7d32', 'pharmacy,chemist', 'help'],
     ['fire', 'Fire stations', 'F', '#ef6c00', 'fire_station', 'help'],
     ['police', 'Police', 'P', '#1a4f9c', 'police', 'help'],
-    ['shelter', 'Shelters (structures)', '⌂', '#455a64', 'shelter', 'help'],
+    ['shelter', 'Shelters & huts (not verified refuges)', '⌂', '#455a64', 'shelter,wilderness_hut,alpine_hut', 'help'],
     ['community', 'Community centers, town halls & libraries', 'C', '#8e24aa', 'community_centre,town_hall,library', 'help'],
-    ['water', 'Drinking-water taps', 'W', '#0277bd', 'drinking_water', 'water'],
+    ['school', 'Schools & social facilities (not designated shelters)', 'Sc', '#8e24aa', 'school,social_facility', 'help'],
+    ['water', 'Mapped drinking-water taps (unverified)', 'W', '#0277bd', 'drinking_water', 'water'],
+    ['waterpoint', 'Wells, taps & water points (untested)', 'Wp', '#0277bd', 'water_well,water_tap,water_point', 'water'],
+    ['toilet', 'Toilets', 'WC', '#546e7a', 'toilet', 'water'],
     ['reservoir', 'Reservoirs & named lakes', '≈', '#1565c0', 'reservoir,lake', 'water'],
     ['pond', 'Unnamed ponds (1+ acre, year-round)', '≈', '#5e9fd0', 'pond', 'water'],
-    ['dam', 'Dams (with storage & purpose)', 'D', '#6d4c41', 'dam', 'water'],
+    ['dam', 'Dams (hazards; never cross outlets)', 'D', '#6d4c41', 'dam,osm_dam', 'water'],
     ['spring', 'Springs (untested water)', 'S', '#00897b', 'spring', 'water'],
-    ['food', 'Supermarkets & food shops', '$', '#a05f00', 'supermarket,convenience', 'supply'],
-    ['hardware', 'Hardware stores', '⚒', '#546e7a', 'hardware,doityourself', 'supply'],
+    ['food', 'Markets, supermarkets & food shops', '$', '#a05f00', 'supermarket,convenience,marketplace,greengrocer,bakery,butcher', 'supply'],
+    ['hardware', 'Hardware & agricultural supplies', '⚒', '#546e7a', 'hardware,doityourself,agrarian', 'supply'],
     ['fuel', 'Fuel stations', 'G', '#37474f', 'fuel', 'supply'],
+    ['repair', 'Vehicle & bicycle repair', 'R', '#546e7a', 'car_repair,bicycle_shop', 'supply'],
     ['camp', 'Campsites', '▲', '#558b2f', 'camp_site', 'supply'],
+    ['transport', 'Bus, rail, ferry & airfields', 'T', '#455a64', 'bus_station,railway_station,ferry_terminal,aerodrome', 'travel'],
+    ['border', 'Border checkpoints & embassies', 'B', '#455a64', 'border_control,embassy', 'travel'],
+    ['ford', 'Fords / water crossings (hazards)', '!', '#c62828', 'ford', 'travel'],
+    ['bridge', 'Bridges (condition unknown)', 'Br', '#6d4c41', 'bridge', 'travel'],
     ['orchard', 'Orchards: nuts, fruit, citrus, olives', '♣', '#3f7a2a', 'orchard', 'food'],
     ['vineyard', 'Vineyards (grapes)', '✽', '#6a2c8f', 'vineyard', 'food'],
     ['berries', 'Berries & asparagus', '✿', '#3949ab', 'berries,perennial_veg', 'food'],
@@ -44,11 +52,11 @@ const MapView = (() => {
     ['mineral', 'Minerals & mines (US)', 'M', '#8b5429', 'mineral', 'resource'],
     ['well', 'Oil & gas wells (California)', 'O', '#633ca6', 'oil_gas_well', 'resource'],
   ].map(([id, label, sym, col, cls, group]) => ({ id, label, sym, col, cls: cls.split(','), group }));
-  const GROUPS = [['help', 'Emergency help'], ['water', 'Water'], ['supply', 'Supplies & camping'], ['food', 'Food that keeps growing (2025 crop maps)'], ['resource', 'Natural resources (historical records)']];
+  const GROUPS = [['help', 'Mapped help & community facilities'], ['water', 'Water & sanitation'], ['supply', 'Supplies & camping'], ['travel', 'Transport, borders & crossings'], ['food', 'Food that keeps growing (US 2025 crop maps)'], ['resource', 'Natural resources (historical records)']];
   const BY_CLS = {}; for (const l of LAYERS) for (const c of l.cls) BY_CLS[c] = l;
-  const DEFAULT_LAYERS = ['hospital', 'clinic', 'pharmacy', 'fire', 'police', 'shelter', 'water', 'reservoir', 'fish', 'boat'];
-  const PRESETS = [['Emergency', ['hospital', 'clinic', 'dentist', 'pharmacy', 'fire', 'police', 'shelter', 'community']], ['Water', ['water', 'spring', 'reservoir', 'pond', 'dam', 'fish', 'boat']],
-    ['Supplies', ['food', 'hardware', 'fuel', 'camp']], ['Food trees', ['orchard', 'vineyard', 'berries']], ['Resources', ['fish', 'boat', 'mineral', 'well']], ['All', LAYERS.map(l => l.id)]];
+  const DEFAULT_LAYERS = ['hospital', 'clinic', 'pharmacy', 'fire', 'police', 'shelter', 'community', 'water', 'waterpoint', 'food', 'fuel'];
+  const PRESETS = [['Survival', DEFAULT_LAYERS], ['Emergency', ['hospital', 'clinic', 'dentist', 'pharmacy', 'fire', 'police', 'shelter', 'community', 'school']], ['Water', ['water', 'waterpoint', 'toilet', 'spring', 'reservoir', 'pond', 'dam', 'fish', 'boat']],
+    ['Supplies', ['food', 'hardware', 'fuel', 'repair', 'camp']], ['Travel', ['transport', 'border', 'ford', 'bridge']], ['Food trees', ['orchard', 'vineyard', 'berries']], ['Resources', ['fish', 'boat', 'mineral', 'well']], ['All', LAYERS.map(l => l.id)]];
   const LEGACY = { all_resources: ['fish', 'boat', 'mineral', 'well'], mineral: ['mineral'], oil_gas_well: ['well'], fish_stocking: ['fish'], boat_launch: ['boat'] };
   const FIELD = { commod1: 'Commodity', commod2: 'Also', commod3: 'Also', ore: 'Ore', dev_stat: 'Recorded status', oper_type: 'Operation', yr_lst_prd: 'Last production year',
     county: 'County', state: 'State',  WellTypeLabel: 'Well type', WellStatus: 'Well status', FieldName: 'Field', API: 'API number', CountyName: 'County',
@@ -57,7 +65,13 @@ const MapView = (() => {
     normal_storage_af: 'Normal storage (acre-ft)', max_storage_af: 'Max storage (acre-ft)', surface_acres: 'Surface (acres)', height_ft: 'Height (ft)', year: 'Built',
     dam_type: 'Dam type', hazard: 'Downstream hazard if it failed', condition: 'Condition', status: 'Status', area_acres: 'Area (acres)', water_type: 'Water present',
     reservoir_type: 'Reservoir type', crop: 'Crop', crop_acres: 'Acres of it in this ~600 m block', perennial_acres: 'All tree, vine & berry acres in block', year: 'Satellite crop map year',
-    FUEL_SALES: 'Fuel sales', NO_OF_RAMP_LANE_USE_ONE_TIME: 'Ramp lanes', FISH_CLEANING: 'Fish cleaning', Comments: 'Notes', Website: 'Website' };
+    FUEL_SALES: 'Fuel sales', NO_OF_RAMP_LANE_USE_ONE_TIME: 'Ramp lanes', FISH_CLEANING: 'Fish cleaning', Comments: 'Notes', Website: 'Website',
+    access: 'Mapped access', operator: 'Operator', opening_hours: 'Mapped hours (unverified)', phone: 'Mapped phone', 'contact:phone': 'Mapped phone',
+    website: 'Website (requires internet)', emergency: 'Mapped emergency capability', healthcare: 'Healthcare', 'healthcare:speciality': 'Speciality',
+    drinking_water: 'Mapped potability (not tested)', seasonal: 'Seasonal', intermittent: 'Intermittent', pump: 'Pump', shelter_type: 'Shelter type',
+    surface: 'Surface', ford: 'Ford', bridge: 'Bridge', toll: 'Toll', fee: 'Fee', capacity: 'Capacity',
+    osm_id: 'OSM source object', data_as_of: 'Source snapshot', warning: 'Important',
+    'addr:street': 'Street', 'addr:housenumber': 'House number', 'addr:city': 'Town / city' };
   const CAVEAT = { mineral: 'USGS mineral record: an occurrence or past mine, not proof of recoverable ore, access or safety. Old workings can be deadly.',
     oil_gas_well: 'State well record. Most are plugged or idle; never approach an unsealed well head.', fish_stocking: 'A past stocking record — it does not confirm fish are present now.',
     boat_launch: 'Facility survey data; check current access.',
@@ -68,7 +82,15 @@ const MapView = (() => {
     vineyard: 'USDA 2025 satellite crop map: usually right for big orchards, sometimes wrong for small ones. Trees and vines keep producing for decades but need water in dry regions and winter pruning. Private farmland — ask first.',
     berries: 'USDA 2025 satellite crop map: usually right for big orchards, sometimes wrong for small ones. Trees and vines keep producing for decades but need water in dry regions and winter pruning. Private farmland — ask first.',
     perennial_veg: 'USDA 2025 satellite crop map: usually right for big orchards, sometimes wrong for small ones. Trees and vines keep producing for decades but need water in dry regions and winter pruning. Private farmland — ask first.',
-    pond: 'Small ponds are often livestock ponds with manure runoff: treat the water and cook any fish thoroughly. Small ponds can be fished out in weeks.', spring: 'Mapped spring — treat the water before drinking.', drinking_water: 'Mapped tap; may be off in an emergency.' };
+    pond: 'Small ponds are often livestock ponds with manure runoff: treat the water and cook any fish thoroughly. Small ponds can be fished out in weeks.', spring: 'Mapped spring — water quality and flow are unverified.', drinking_water: 'Mapped drinking-water point; potability and supply are unverified. May be off in an emergency.',
+    water_well: 'Mapped well, not a verified safe supply. May be dry, private or require a pump. Treatment does not remove all chemical contamination.',
+    water_tap: 'Mapped tap; do not assume water is drinkable or available.', water_point: 'Mapped water point; do not assume water is drinkable or available.',
+    ford: 'Dangerous crossing: never enter floodwater. Depth, current and road passability are not known offline.',
+    bridge: 'Mapped bridge; condition, load limits and passability are unverified. Never assume a crossing is safe.',
+    osm_dam: 'Mapped dam, not a safe crossing or drinking-water source. Stay away from outlets and spillways.',
+    school: 'A mapped school is NOT a designated emergency shelter. Check permission and local arrangements.',
+    social_facility: 'Not necessarily a public refuge or emergency shelter. Check its purpose and access locally.',
+    border_control: 'Mapped checkpoint, not proof a border is open or legal to cross. Check official requirements.' };
   let st = null, world = null, geography = null;
 
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem('sg.' + k)) ?? d } catch { return d } };
@@ -79,7 +101,7 @@ const MapView = (() => {
   const y2lat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / 2 ** z; return 180 / Math.PI * Math.atan(Math.sinh(n)) };
   const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const $ = id => document.getElementById(id);
-  const dist = km => km < 1.6 ? Math.round(km * 1000) + ' m' : (km / 1.609).toFixed(km < 16 ? 1 : 0) + ' mi';
+  const dist = km => km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(km < 10 ? 1 : 0) + ' km';
   const kmBetween = (a, b, c, d) => { const r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)) };
   const sym = (l, size = 22) => `<i class="msym" style="background:${l.col};width:${size}px;height:${size}px">${escH(l.sym)}</i>`;
   const layerOf = cls => BY_CLS[cls] || { sym: '•', col: '#555', label: cls };
@@ -101,7 +123,7 @@ const MapView = (() => {
     if (!on.length) on = DEFAULT_LAYERS;
     main.classList.add('map-page');
     document.title = 'Map · Lastbook';
-    main.innerHTML = `<div class="maphead"><h1>Map &amp; nearby help</h1><p class="small muted">Offline: works with no internet. Shows what was mapped by 25 Oct 2026 — not damage, closures or hazards.</p>${IN_WINDOW ? '<a class="btn plain" href="/ui/setup.html#manage">Map downloads</a>' : ''}</div>
+    main.innerHTML = `<div class="maphead"><h1>Map &amp; nearby help</h1><p class="small muted">Offline: works with no internet. Historical maps, not live damage, closures or hazards. Coverage and source dates vary; see below.</p>${IN_WINDOW ? '<a class="btn plain" href="/ui/setup.html#manage">US map downloads</a>' : ''}</div>
     <div class="mapgrid"><div class="mapwrap" id="mapwrap">
       <canvas id="mapc" tabindex="0" role="application" aria-label="Map. Arrow keys move, plus and minus zoom, Escape closes details. The list beside the map gives the same places as text."></canvas>
       <div class="map-top">
@@ -112,6 +134,7 @@ const MapView = (() => {
       <div class="map-pop layers" id="layers" hidden></div>
       <div class="mapctl"><span class="zgrp" role="group" aria-label="Zoom"><button id="zin" aria-label="Zoom in" title="Zoom in">+</button><button id="zout" aria-label="Zoom out" title="Zoom out">−</button></span>
         <button id="zhome" aria-label="Go to my area" title="My area"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 4l9 7v9h-6v-6H9v6H3z"/></svg></button><button id="map-us" aria-label="Whole United States" title="Whole US">US</button>
+        <button id="map-zw" hidden title="Zimbabwe">ZW</button><button id="map-africa" hidden title="Africa overview">Africa</button><button id="map-asia" hidden title="Asia overview">Asia</button>
         <button id="map-full" aria-label="Full screen" title="Full screen">${FULL[0]}</button><button id="map-3d" aria-label="3D terrain view" title="3D view">3D</button><button id="map-photo" aria-label="Aerial photos" aria-pressed="false" title="Aerial photos">🛰</button></div>
       <div class="map-card" id="card" hidden></div>
       <div class="map-tip" id="tip" hidden></div>
@@ -121,6 +144,7 @@ const MapView = (() => {
     <div class="maptools">
       <section class="panel"><h2>Nearest to the map center</h2><p class="small muted" style="margin:0 0 4px">For the layers you have on. Straight-line distance, not by road.</p><div class="nearres" id="near" aria-live="polite"></div></section>
       <section class="panel"><h2>Your area</h2><p class="small muted" style="margin:0 0 8px">The home button returns here. Saved on this device only.</p><button class="btn plain" id="sethome">Make the map center my area</button>${navigator.geolocation && isSecureContext ? ' <button class="btn plain" id="gps">Use my location</button>' : ''}</section>
+      <section class="panel"><h2>Installed detailed country maps</h2><label class="sr" for="map-country">Go to an installed country</label><select id="map-country"><option value="">Loading…</option></select><p class="small muted">Only installed countries have local roads and service pins. Other areas have overview maps. Mapped facilities may be closed, private or missing; no map lists every survival resource.</p></section>
       <section class="panel"><h2>What this map covers</h2><ul class="list small" id="mdata"><li class="muted">Loading…</li></ul></section>
     </div></div>`;
     // The map fills the window. With the tools beside it, the page ends where the window does, at the page's own bottom margin (so the
@@ -153,6 +177,10 @@ const MapView = (() => {
     $('zout').onclick = () => zoomAt(-1, cv.clientWidth / 2, cv.clientHeight / 2);
     $('zhome').onclick = () => { const h = load('mapHome', HOME); if (h) go(h.lat, h.lon, h.z); else { closeCard(); fit(wholeMap(), 0.92, true) } };
     $('map-us').onclick = () => { closeCard(); fit(wholeMap(), 0.92, true) };
+    $('map-zw').onclick = () => { closeCard(); fit([25.2, -22.5, 33.1, -15.5], 0.92, true) };
+    $('map-africa').onclick = () => { closeCard(); fit([-18, -35, 52, 38], 0.92, true) };
+    $('map-asia').onclick = () => { closeCard(); fit([26, -11, 180, 78], 0.92, true) };
+    $('map-country').onchange = e => { const r = st.regional?.regions?.[Number(e.target.value)]; if (e.target.value !== '' && r) { closeCard(); fit(r.bounds, .92, true) } };
     $('map-full').onclick = toggleFull;
     $('map-photo').onclick = () => setPhoto(!st.style.aerial);
     $('map-photo').classList.toggle('on', !!st.style.aerial); $('map-photo').setAttribute('aria-pressed', !!st.style.aerial);
@@ -176,7 +204,9 @@ const MapView = (() => {
     fetch('/api/map/info').then(r => r.json()).then(info => {
       if (!st) return;
       st.national = info.national; st.ver = info.version; st.aerialDetail = info.aerial_detail; st.aerialRev = info.aerial_rev; st.terrainCircle = info.terrain_circle;
-      describe(info); if (openWhole) fit(wholeMap(), 0.92, true); coverage(); draw();
+      describe(info);
+      if (openWhole) { if (info.home) go(info.home.lat, info.home.lon, info.home.z); else fit(wholeMap(), 0.92, true) }
+      coverage(); draw();
       $('mdata').innerHTML = info.datasets.map(d => `<li class="row" style="display:block"><b>${escH(d.label)}</b><span class="muted">${escH(d.status)}</span>${d.bytes ? ` · ${(d.bytes / 1073741824).toFixed(1)} GB` : ''}</li>`).join('') +
         (st.have && !st.have.size ? '' : `<li class="row small muted" style="display:block">${st.have ? '' : 'Not drawn yet: forest types. '}Resource layers are records — fish, wells, mines and crops show where they were recorded or mapped, not proof of what is there now.</li>`);
     }).catch(() => { $('mdata').innerHTML = '<li class="muted">Map details unavailable.</li>'; if (openWhole && st) fit(US, 0.92, true) });
@@ -185,19 +215,31 @@ const MapView = (() => {
       if (!st) return;
       try { const info = await fetch('/api/map/info').then(r => r.json()); if (!st) return; st.national = info.national; coverage();
         if (info.aerial_rev !== st.aerialRev) { st.aerialRev = info.aerial_rev; st.aerialDetail = info.aerial_detail; for (const v of st.aerial?.values() || []) v.close?.(); st.aerial = new Map(); draw() }  // new sharp photos: new URLs
-        if (info.version !== st.ver) { st.ver = info.version; st.gen++; st.pinBox = null; draw(); loadPins() } } catch { }
+        if (info.version !== st.ver) { st.ver = info.version; describe(info); st.gen++; st.pinBox = null; $('layers').innerHTML = ''; draw(); loadPins(); nearby() } } catch { }
     }, 60000);
     if (!openWhole) { draw(); settle() }
   }
   // What this map really holds, when the server says (an older one sends none of this, and everything stays offered).
   function describe(info) {
+    st.regional = info.regional;
+    if (info.regional) {
+      HOME = HOME || info.home;
+      for (const id of ['map-zw', 'map-africa', 'map-asia']) $(id).hidden = false;
+    }
+    const countries = info.regional?.regions || [];
+    $('map-country').innerHTML = '<option value="">' + (countries.length ? 'Choose a country…' : 'No detailed country maps installed') + '</option>' + countries.map((r, i) => `<option value="${i}">${escH(r.title)}</option>`).join('');
+    $('map-country').disabled = !countries.length;
+    st.noTerrain = info.terrain === false;
+    if (st.noTerrain) { st.style.relief = false; $('map-3d')?.remove() }
     if (info.aerial === false) { st.noAerial = true; st.style.aerial = false; $('map-photo')?.remove() }
     st.noContours = info.contours === false;
     if (!info.layers) return;
+    const hadNoLayers = st.have && !st.have.size;
     st.have = new Set(info.layers); st.bounds = info.bounds;
+    if (hadNoLayers && st.have.size) st.on = new Set(load('mapLayers', DEFAULT_LAYERS));
     st.on = new Set([...st.on].filter(id => offered(LAYERS.find(l => l.id === id))));
     layerCount();
-    if (!st.have.size) $('near').closest('section').hidden = true;
+    $('near').closest('section').hidden = !st.have.size;
     if (info.bounds) { const b = $('map-us'); b.textContent = 'All'; b.title = 'Whole map'; b.setAttribute('aria-label', 'Whole map') }
   }
   const offered = l => !st.have || (l && l.cls.some(c => st.have.has(c)));
@@ -220,7 +262,13 @@ const MapView = (() => {
     const n = st?.national, el = $('mstatus'); if (!el) return;
     const inSoCal = st.lat > 32.5 && st.lat < 35.9 && st.lon > -121.4 && st.lon < -114.1;
     const b = st.bounds, outside = b && (st.lon < b[0] || st.lon > b[2] || st.lat < b[1] || st.lat > b[3]);
-    st.coverNote = n && n.state === 'building' && !inSoCal
+    const detailed = st.regional?.regions?.find(r => st.lon >= r.bounds[0] && st.lon <= r.bounds[2] && st.lat >= r.bounds[1] && st.lat <= r.bounds[3]);
+    const regionalArea = st.regional && st.lon >= -20 && st.lon <= 180 && st.lat >= -60 && st.lat <= 85;
+    st.coverNote = detailed
+      ? `${detailed.title}: detailed OSM roads & mapped locations · ${detailed.data_as_of}. Mapping is incomplete; water safety, service availability and access are unverified. No routing or live hazards.`
+      : regionalArea
+      ? 'Africa / Asia: generalised overview only. Not street navigation; no verified emergency services, water safety or live hazards.'
+      : n && n.state === 'building' && !inSoCal
       ? `US streets still being converted (${((n.features || 0) / 1e6).toFixed(1)}M roads & features so far) — gaps fill in automatically.`
       : outside ? 'Outside the area this map details, only main roads, towns and water show.'
       : st.have && !st.have.size && st.z >= 9 ? 'This download has the base map only: main roads, towns and water.' : '';
@@ -247,7 +295,7 @@ const MapView = (() => {
       ${st.have && !st.have.size ? '' : `<div class="presets">${PRESETS.map(([n]) => `<button data-p="${n}">${n}</button>`).join('')}<button data-p="">None</button></div>`}
       <fieldset class="style"><legend>Map style</legend>
         ${st.noAerial ? '' : `<label><input type="checkbox" data-style="aerial"${st.style.aerial ? ' checked' : ''}><i class="msym style-ico">🛰</i><span>Aerial photos (USGS / USDA)</span></label>`}
-        <label><input type="checkbox" data-style="relief"${st.style.relief ? ' checked' : ''}><i class="msym style-ico">⛰</i><span>Shaded relief (hills &amp; valleys)</span></label>
+        ${st.noTerrain ? '' : `<label><input type="checkbox" data-style="relief"${st.style.relief ? ' checked' : ''}><i class="msym style-ico">⛰</i><span>Shaded relief (US only)</span></label>`}
         ${st.noContours ? '' : `<label><input type="checkbox" data-style="contours"${st.style.contours ? ' checked' : ''}><i class="msym style-ico">〰</i><span>Contour lines (from zoom 11)</span></label>`}
         ${st.have && !st.have.has('orchard') ? '' : `<label><input type="checkbox" data-style="crops"${st.style.crops !== false ? ' checked' : ''}><i class="msym style-ico" style="background:#3f7a2a">♣</i><span>Orchard &amp; vineyard areas (coloured)</span></label>`}</fieldset>
       ${GROUPS.filter(([g]) => LAYERS.some(l => l.group === g && offered(l))).map(([g, gl]) => `<fieldset><legend>${gl}</legend>${LAYERS.filter(l => l.group === g && offered(l)).map(l => `<label class="ly"><input type="checkbox" value="${l.id}"${st.on.has(l.id) ? ' checked' : ''}>${sym(l, 20)}<span>${escH(l.label)}</span><small>${st.on.has(l.id) ? (counts[l.id] || 0).toLocaleString() : ''}</small></label>`).join('')}</fieldset>`).join('')}
@@ -399,6 +447,7 @@ const MapView = (() => {
     }
     g.setLineDash([]);
     if (L.rail) { g.strokeStyle = C.rail; g.lineWidth = 1.4 * R; g.setLineDash([5 * R, 3 * R]); for (const [, , parts] of L.rail) for (const p of parts) { line(p); g.stroke() } g.setLineDash([]) }
+    if (L.border) { g.strokeStyle = '#887f91'; g.lineWidth = R; g.setLineDash([4 * R, 3 * R]); for (const [, , parts] of L.border) for (const p of parts) { line(p); g.stroke() } g.setLineDash([]) }
     g.globalAlpha = 1;
     const labels = [];
     if (L.place) for (const [cls, name, parts] of L.place) labels.push({ x: parts[0][0] / EXT, y: parts[0][1] / EXT, name, cls, pri: { city: 1, town: 2, suburb: 3, village: 3, county: 0, region: 0 }[cls] ?? 4 });
@@ -854,12 +903,12 @@ const MapView = (() => {
       const r = await fetch(`/api/map/near?lat=${st.lat}&lon=${st.lon}&cls=${ks.join(',')}&limit=${Math.max(3, Math.ceil(14 / ks.length))}`).then(r => r.json());
       if (st !== state || serial !== st.serial.near) return;
       box.classList.remove('busy');
-      if (!Array.isArray(r) || !r.length) { box.innerHTML = '<p class="muted small">Nothing from your layers within about 100 miles of the map center.</p>'; return }
+       if (!Array.isArray(r) || !r.length) { box.innerHTML = '<p class="muted small">No matching records in the nearby offline data. This does not mean no services exist. Try other layers or a nearby town.</p>'; return }
       const list = r.sort((a, b) => a.km - b.km).slice(0, 14);
       box.innerHTML = list.map((p, i) => `<button data-i="${i}">${sym(layerOf(p.cls), 24)}<span><b>${escH(unnamed(p))}</b><small>${escH(layerOf(p.cls).label)} · ${dist(p.km)} ${escH(p.dir)}</small>${p.detail ? `<small>${escH(p.detail)}</small>` : ''}</span></button>`).join('');
       box.querySelectorAll('button').forEach(b => b.onclick = () => {
         const p = list[+b.dataset.i]; box.querySelectorAll('button.on').forEach(x => x.classList.remove('on')); b.classList.add('on');
-        st.z = Math.max(st.z, 16); st.lat = p.lat; st.lon = p.lon; st.listAt = 1; showDetail({ ...p, summary: p.detail, detail: {} }); settle(true); b.classList.add('on');
+        st.z = Math.max(st.z, 16); st.lat = p.lat; st.lon = p.lon; st.listAt = 1; showDetail({ ...p, summary: p.detail, detail: p.record || {} }); settle(true); b.classList.add('on');
         if (innerWidth < 1000) $('mapwrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     } catch { if (st === state) box.innerHTML = '<p class="muted small">Nearby search is unavailable.</p>' }

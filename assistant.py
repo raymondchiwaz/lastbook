@@ -205,7 +205,7 @@ TOOLS = [
         'Get timestamped transcript lines from a library video, optionally around a topic, to cite a moment in it.',
         'parameters': {'type': 'object', 'properties': {'video_id': {'type': 'string'}, 'query': {'type': 'string'}}, 'required': ['video_id']}}},
     {'type': 'function', 'function': {'name': 'lookup_place', 'description':
-        'Find a place (town, ZIP code, named place) in the offline gazetteer, and optionally the nearest help points (hospital, clinic, pharmacy, fire_station, police, drinking_water, toilet, shelter, community_centre, supermarket) from the offline Southern California map.',
+        'Find a place in the offline gazetteer, and optionally nearby mapped services in installed detailed maps (hospital, clinic, pharmacy, fire_station, police, drinking_water, water_well, water_tap, toilet, shelter, community_centre, supermarket). Records are incomplete and unverified; water safety, operating services, access and passability are not known.',
         'parameters': {'type': 'object', 'properties': {'query': {'type': 'string'},
             'nearby': {'type': 'string', 'description': 'Comma-separated kinds of help point to list near the place'}}, 'required': ['query']}}},
 ]
@@ -317,9 +317,12 @@ def run_tool(name, args, sess, extra_msgs):
         kinds = [c.strip() for c in str(args.get('nearby') or '').split(',') if c.strip() in S.HELP]
         if kinds and pl[0]['onMap']:
             for h in S.near(pl[0]['lat'], pl[0]['lon'], kinds, 3):
-                k = sess.add({'kind': 'place', 'title': h['name'] or h['label'], 'publisher': 'OpenStreetMap (data as of 25 Oct 2026)', 'lat': h['lat'], 'lon': h['lon'],
-                              'excerpt': f"{h['label']} · {h['km']} km {h['dir']} of {pl[0]['name']} (straight line)"})
-                lines.append(f"[{k}] {h['label']}: {h['name'] or '(no name recorded)'} — {h['km']} km {h['dir']} (straight-line)")
+                record = h.get('record') or {}
+                caution = 'Unverified mapped record; check availability, access and water safety locally.'
+                details = json.dumps(record, ensure_ascii=False) if record else caution
+                k = sess.add({'kind': 'place', 'title': h['name'] or h['label'], 'publisher': h.get('source') or 'Offline map data (see map coverage for source dates)', 'lat': h['lat'], 'lon': h['lon'],
+                              'excerpt': f"{h['label']} · {h['km']} km {h['dir']} of {pl[0]['name']} (straight line). {caution}"})
+                lines.append(f"[{k}] {h['label']}: {h['name'] or '(no name recorded)'} — {h['km']} km {h['dir']} (straight-line). {details}")
         return 'Offline map data (may be outdated; does not show closures or damage):\n' + '\n'.join(lines), {'query': q, 'count': len(pl)}
     return f'Unknown tool {name}.', {'error': 'unknown tool'}
 
@@ -392,6 +395,7 @@ GROUPED = re.compile(r'\[\s*[SM]\d+(?:\s*[,;]\s*[SM]\d+)+\s*\]')   # how Gemma o
 # The local model has no image input, so it is not told about view_page.
 SYSTEM_TEXT_ONLY = SYSTEM.replace(', view_page when a diagram or table matters', '').replace(
     'scanned pages without text (unless you view the page image)', 'pictures, diagrams or scanned pages without text')
+SYSTEM_TEXT_ONLY += '\nCitation format: append a source key in square brackets, for example [S2], to each sourced statement. Copy the brackets exactly; a bare S2 is not a citation. Use only keys supplied with the actual reference text.'
 ROUND_TOKENS = 1800
 
 

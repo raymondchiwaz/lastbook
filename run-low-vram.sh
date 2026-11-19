@@ -31,6 +31,12 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$LASTBOOK_AI_MODEL" in qwen3.5-2b|qwen3.5-0.8b|qwen2.5-1.5b|qwen3.5-2b-abliterated|minicpm5-2b) ;; *) echo 'Unknown model. Run bash run-low-vram.sh --help.' >&2; exit 2 ;; esac
+# On this machine the AMD Radeon Pro WX 3200 is Vulkan device 1; force it instead of Intel/llvmpipe.
+if [ -z "${GGML_VK_VISIBLE_DEVICES:-}" ] && [ -r "$ROOT/derived/llm/vulkan-device" ]; then
+  read -r _lastbook_vk_device < "$ROOT/derived/llm/vulkan-device" || true
+  [ -n "${_lastbook_vk_device:-}" ] && export GGML_VK_VISIBLE_DEVICES="$_lastbook_vk_device"
+fi
+
 export GST_PLUGIN_PATH_1_0="$ROOT/derived/gst${GST_PLUGIN_PATH_1_0:+:$GST_PLUGIN_PATH_1_0}"
 export WEBKIT_GST_ALLOWED_URI_PROTOCOLS=lastbook
 # Older 2 GB cards may have limited compositor/DMABUF support. This also leaves more VRAM for the model.

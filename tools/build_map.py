@@ -14,7 +14,6 @@ the original archive is only read. Output tables:
 import math, sqlite3, struct, sys, time
 from array import array
 
-SRC, DST = sys.argv[1], sys.argv[2]
 Q = 1e6
 
 ROAD_Z = {'motorway': 5, 'trunk': 6, 'motorway_link': 10, 'trunk_link': 10, 'primary': 8, 'primary_link': 12,
@@ -120,6 +119,7 @@ def area_z(minx, maxx, miny, maxy, base):
 
 
 def main():
+    SRC, DST = sys.argv[1], sys.argv[2]
     t0 = time.time()
     src = sqlite3.connect(SRC)
     dst = sqlite3.connect(DST)
@@ -205,4 +205,5 @@ def main():
     print('done features', fid[0], 'pois', pid, round(time.time() - t0), 's', flush=True)
 
 
-main()
+if __name__ == '__main__':
+    main()

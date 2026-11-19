@@ -73,7 +73,7 @@ def main():
             # Continue a real tool turn: the model must consume the tool result and answer with its source.
             follow = [
                 {'role': 'system', 'content': assistant.SYSTEM_TEXT_ONLY},
-                {'role': 'user', 'content': 'What is the archive label? Search the archive first.'},
+                {'role': 'user', 'content': 'What is the archive label? Search the archive first and include the source citation in square brackets.'},
                 {'role': 'assistant', 'content': '', 'tool_calls': [{'id': 'archive_search', 'type': 'function',
                     'function': {'name': 'search_library', 'arguments': '{"query":"archive label"}'}}]},
                 {'role': 'tool', 'tool_call_id': 'archive_search',

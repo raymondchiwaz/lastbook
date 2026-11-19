@@ -33,7 +33,7 @@ if __name__ == '__main__':  # --data must be known before the paths below are wo
 
 import engine.paths as lastbook_paths  # noqa: E402  (data folder and program folder can differ in the packaged app)
 from engine.paths import ro_uri  # noqa: E402
-from engine import saved_pages, address_search  # noqa: E402
+from engine import saved_pages, address_search, regional_maps  # noqa: E402
 from engine.setup import api as setup_api  # noqa: E402  (the one module that may download: only when the person asks)
 HERE = lastbook_paths.DATA  # holds derived/
 APP = lastbook_paths.APP  # holds web/ and content/
@@ -841,7 +841,7 @@ def data_version():
             v += f".{int(f.stat().st_mtime) // 60}"
         except OSError:
             pass
-    return v
+    return v + '.r' + regional_maps.version(HERE)
 
 
 def map_tile(z, x, y):
@@ -867,7 +867,7 @@ def map_tile(z, x, y):
 @functools.lru_cache(maxsize=2048)
 def _map_tile(z, x, y, version):
     db = mapdb()
-    if db is None:
+    if db is None and regional_maps.database(HERE) is None and not regional_maps.detail_databases(HERE):
         return b'{"error":"map not built"}'
     lon0, lat0, lon1, lat1 = tile_bounds(z, x, y)
     pad = (lon1 - lon0) * 0.04
@@ -880,7 +880,8 @@ def _map_tile(z, x, y, version):
         return px, py
     rows = db.execute('SELECT f.layer,f.cls,f.name,f.geom FROM feat_idx i JOIN feat f ON f.id=i.id '
                       'WHERE i.maxx>=? AND i.minx<=? AND i.maxy>=? AND i.miny<=? AND i.minz<=? ORDER BY f.id',
-                      (lon0 - pad, lon1 + pad, lat0 - pad, lat1 + pad, z)).fetchall()
+                      (lon0 - pad, lon1 + pad, lat0 - pad, lat1 + pad, z)).fetchall() if db else []
+    rows += regional_maps.rows(HERE, lon0 - pad, lat0 - pad, lon1 + pad, lat1 + pad, z)
     national = national_mapdb()
     if national is not None and z >= 11:
         c = SOCAL_CELL
@@ -1056,7 +1057,14 @@ HELP = {'hospital': 'Hospital', 'clinic': 'Clinic', 'doctors': 'Doctor', 'pharma
         'embassy': 'Embassy', 'mineral': 'Recorded mineral / mine', 'oil_gas_well': 'Recorded oil / gas well',
         'boat_launch': 'Boating facility', 'fish_stocking': 'Fish-stocking record',
         'dam': 'Dam (National Inventory of Dams)', 'reservoir': 'Reservoir', 'lake': 'Lake or pond', 'pond': 'Pond',
-        'orchard': 'Orchard', 'vineyard': 'Vineyard', 'berries': 'Berry field', 'perennial_veg': 'Asparagus field'}
+        'orchard': 'Orchard', 'vineyard': 'Vineyard', 'berries': 'Berry field', 'perennial_veg': 'Asparagus field',
+        'water_well': 'Water well (untested)', 'water_tap': 'Water tap (untested)', 'water_point': 'Water point (untested)',
+        'marketplace': 'Market', 'greengrocer': 'Fruit & vegetables', 'bakery': 'Bakery', 'butcher': 'Butcher',
+        'agrarian': 'Agricultural supplies', 'wilderness_hut': 'Wilderness hut', 'alpine_hut': 'Mountain hut',
+        'social_facility': 'Social facility (not necessarily a shelter)', 'border_control': 'Border checkpoint',
+        'bus_station': 'Bus station', 'railway_station': 'Railway station', 'ferry_terminal': 'Ferry terminal',
+        'aerodrome': 'Airfield', 'ford': 'Ford / water crossing (hazard)', 'bridge': 'Mapped bridge (condition unknown)',
+        'osm_dam': 'Mapped dam (hazard)'}
 
 
 CROP_KINDS = {'orchard', 'vineyard', 'berries', 'perennial_veg'}
@@ -1208,6 +1216,15 @@ def _pins(west, south, east, north, cx, cy, kinds, version):
                    f'GROUP BY cls, CAST((lon+180)/? AS INT), CAST((lat+90)/? AS INT)')
             for k, n, la, lo, x0, x1, y0, y1, name in db.execute(sql, (*services, west, east, south, north, cx, cy)):
                 add(k, n, n, la, lo, x0, x1, y0, y1, name or '', {}, '')
+    if kinds:
+        q = ','.join('?' * len(kinds))
+        for db in regional_maps.poi_databases(HERE, west, south, east, north):
+            sql = (f'SELECT cls,COUNT(*),AVG(lat),AVG(lon),MIN(lon),MAX(lon),MIN(lat),MAX(lat),MIN(name),MIN(detail) FROM poi '
+                   f'WHERE cls IN ({q}) AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ? '
+                   'GROUP BY cls, CAST((lon+180)/? AS INT), CAST((lat+90)/? AS INT)')
+            for k, n, la, lo, x0, x1, y0, y1, name, detail in db.execute(sql, (*kinds, west, east, south, north, cx, cy)):
+                add(k, n, n, la, lo, x0, x1, y0, y1, name or '', json.loads(detail) if n == 1 else {},
+                    'OpenStreetMap contributors · ODbL 1.0')
     for path in resource_dbs(resources):
         rdb = sqlite3.connect(ro_uri(path), uri=True)
         try:
@@ -1264,7 +1281,16 @@ def members(west, south, east, north, kinds, lat, lon, limit=60):
             rows += [{'cls': c, 'label': HELP.get(c, c), 'name': n or '', 'lon': x, 'lat': y, 'summary': '', 'detail': {}, 'source': ''}
                      for c, n, x, y in db.execute(f'SELECT cls,name,lon,lat FROM poi WHERE cls IN ({q}) AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ?'
                                                   f'{" AND socal(cls,lon,lat)=0" if dedupe else ""} LIMIT 2000',
-                                                  (*services, west - eps, east + eps, south - eps, north + eps))]
+                                                   (*services, west - eps, east + eps, south - eps, north + eps))]
+    if kinds:
+        q = ','.join('?' * len(kinds))
+        for db in regional_maps.poi_databases(HERE, west, south, east, north):
+            for c, n, x, y, d in db.execute(f'SELECT cls,name,lon,lat,detail FROM poi WHERE cls IN ({q}) '
+                                           'AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ? LIMIT 2000',
+                                           (*kinds, west-eps, east+eps, south-eps, north+eps)):
+                rows.append({'cls': c, 'label': HELP.get(c, c), 'name': n or '', 'lon': x, 'lat': y,
+                             'summary': 'Mapped location; check access and current conditions.', 'detail': json.loads(d),
+                             'source': 'OpenStreetMap contributors · ODbL 1.0'})
     for path in resource_dbs(resources):
         with sqlite3.connect(ro_uri(path), uri=True) as rdb:
             for k, n, y, x, d, src in rdb.execute(
@@ -1287,6 +1313,20 @@ def near(lat, lon, classes, limit=8):
     limit = max(1, min(limit, 50))
     out = []
     for cls in classes:
+        d = .02
+        regional = []
+        while d < 1.5 and len(regional) < limit:
+            regional = []
+            for source in regional_maps.poi_databases(HERE, lon-d, lat-d, lon+d, lat+d):
+                regional += source.execute('SELECT cls,name,lon,lat,detail FROM poi WHERE cls=? '
+                                           'AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ?',
+                                           (cls, lon-d, lon+d, lat-d, lat+d)).fetchall()
+            d *= 2
+        for c, name, x, y, detail in regional:
+            dist, brg = haversine(lat, lon, y, x)
+            out.append({'cls': c, 'label': HELP.get(c, c), 'name': name, 'lat': y, 'lon': x,
+                        'km': round(dist, 2), 'dir': brg, 'detail': 'OpenStreetMap · availability and access unverified',
+                        'record': json.loads(detail), 'source': 'OpenStreetMap contributors · ODbL 1.0'})
         if cls in RESOURCE_KINDS:
             out.extend(resource_near(lat, lon, cls, limit))
             continue
@@ -1395,24 +1435,26 @@ def water_places(q, limit=10, near=None):
 def places(q, limit=20, near=None):
     if address_search.is_address_query(q):
         return address_search.find_addresses(q, HERE / 'derived' / 'geo', limit=min(limit, 8), near=near)
+    regional = regional_maps.places(HERE, q, limit)
     if not PLACEDB.exists():
-        return []
-    db = sqlite3.connect(ro_uri(PLACEDB), uri=True)
+        return regional
     words = re.findall(r'\w+', q)
     if not words:
         return []
     rows = []
     full = False
-    for ws in word_sets(words):
-        if full and len(ws) < len(words):
-            break  # every word matched somewhere: no need to loosen
-        if not ws:
-            continue
-        rows += db.execute('SELECT p.name,p.kind,p.detail,p.lat,p.lon,p.rank,p.source FROM place_fts f JOIN place p ON p.id=f.rowid '
-                           'WHERE place_fts MATCH ? ORDER BY p.rank, bm25(place_fts) LIMIT 200',
-                           (' '.join('"%s"*' % w.replace('"', '') for w in ws),)).fetchall()
-        if len(ws) == len(words):
-            full = bool(rows)
+    with sqlite3.connect(ro_uri(PLACEDB), uri=True) as db:
+        for ws in word_sets(words):
+            if full and len(ws) < len(words):
+                break  # every word matched somewhere: no need to loosen
+            if not ws:
+                continue
+            rows += db.execute('SELECT p.name,p.kind,p.detail,p.lat,p.lon,p.rank,p.source FROM place_fts f JOIN place p ON p.id=f.rowid '
+                               'WHERE place_fts MATCH ? ORDER BY p.rank, bm25(place_fts) LIMIT 200',
+                               (' '.join('"%s"*' % w.replace('"', '') for w in ws),)).fetchall()
+            if len(ws) == len(words):
+                full = bool(rows)
+    rows += [(p['name'], p['kind'], p['detail'], p['lat'], p['lon'], 1, p['source']) for p in regional]
     rows = list(dict.fromkeys(rows))
     def norm(t):
         return ' '.join(re.sub(r'\bsaint\b', 'st', re.sub(r'[^\w ]+', ' ', t.lower())).split())
@@ -1441,7 +1483,7 @@ def places(q, limit=20, near=None):
             continue
         seen.add(k)
         out.append({'name': name, 'kind': kind, 'detail': detail, 'lat': lat, 'lon': lon, 'source': src,
-                    'onMap': bool(pack_info()) or 32.5 < lat < 35.9 and -121.4 < lon < -114.1})
+                    'onMap': src in ('Natural Earth', 'OpenStreetMap') or bool(pack_info()) or 32.5 < lat < 35.9 and -121.4 < lon < -114.1})
         if len(out) >= limit:
             break
     water = water_places(q, near=near)
@@ -1555,7 +1597,8 @@ def map_info():
         p = LIB / rel
         if p.exists() and label:
             geo.append({'label': label, 'status': status, 'path': rel, 'bytes': p.stat().st_size})
-    geo.append({'label': 'US place names (USGS GNIS) and Census 2025 ZIP-code and county centres', 'status': 'Used by "Find a place", together with named lakes, reservoirs and dams', 'path': 'geography/geographic-names/'})
+    if PLACEDB.exists():
+        geo.append({'label': 'US place names (USGS GNIS) and Census 2025 ZIP-code and county centres', 'status': 'Used by "Find a place", together with named lakes, reservoirs and dams', 'path': 'geography/geographic-names/'})
     if WATERDB.exists():
         try:
             w = dict(sqlite3.connect(ro_uri(WATERDB), uri=True).execute('SELECT key,value FROM meta').fetchall())
@@ -1615,10 +1658,33 @@ def map_info():
     if AERIALDB.exists():
         geo.append({'label': 'Aerial photos, whole US (USGS The National Map: USDA NAIP and other orthoimagery)', 'status': 'Zoom 0-15 nationwide, 16 in California and towns · downloading'})
     pack = pack_info()
-    extra = {'aerial': has_aerial()}
+    extra = {'aerial': has_aerial(), 'terrain': TERRAINDB.exists() or TERRAIN_DETAIL.exists()}
     if pack:
         extra.update(map_contents())
         geo = pack_datasets(extra)
+    regional = regional_maps.info(HERE)
+    if regional:
+        extra.update(regional=regional, bounds=regional['bounds'], home=regional['home'])
+        geo.append({'label': regional['title'] + ' (Natural Earth overview; country detail listed separately)',
+                    'status': f"{regional['features']:,} features · offline overview. " + regional['limitations'],
+                    'bytes': regional['bytes']})
+        if not pack and not MAPDB.exists():
+            extra.update(layers=[], contours=False)
+        if 'layers' in extra:
+            extra['layers'] = sorted(set(extra['layers']) | set(regional['layers']))
+        for region in regional['regions']:
+            geo.append({'label': region['title'] + ' detailed roads & survival locations (OpenStreetMap / ODbL 1.0)',
+                        'status': f"{int(region['features']):,} features · {int(region['pois']):,} mapped locations · source {region['data_as_of']}. "
+                                  'Incomplete mapping; not verified safe, accessible or operating. No routing or live hazards.',
+                        'bytes': region['bytes']})
+    try:
+        progress = json.loads((regional_maps.path(HERE).parent / 'install-status.json').read_text())
+        geo.append({'label': 'Africa / Asia detailed country installation',
+                    'status': f"{len(progress['ready'])} of {progress['total']} installed · {progress['state']}"
+                              + (f": {progress['current']}" if progress.get('current') else '')
+                              + (f" · {len(progress['failed'])} need attention" if progress.get('failed') else '')})
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     return {**extra, 'meta': meta, 'datasets': geo, 'national': {k: v for k, v in national_status().items() if k not in ('source', 'database')}, 'version': data_version(), 'aerial_detail': detail, 'aerial_rev': rev, 'terrain_circle': tdetail}
 
 
@@ -1629,7 +1695,7 @@ def pack_datasets(have):
     if have['detail']:
         out.append({'label': f'Streets, places and help points (OpenStreetMap) for {area}', 'status': 'Street detail stops at the edge of this area.' if have['bounds'] else 'Shown when you zoom in'})
     else:
-        out.append({'label': 'No street detail or help points', 'status': 'This download has only the base map. Hospitals, water taps and side streets are not in it.'})
+        out.append({'label': 'US base map only', 'status': 'No US street detail or service pins in this library download. Installed African/Asian country maps are listed separately.'})
     if PLACEDB.exists():
         out.append({'label': 'Place names (USGS GNIS, Census 2025 ZIP codes and counties)', 'status': 'Used by "Find a town, ZIP or place"'})
     if TERRAINDB.exists():
@@ -2101,7 +2167,7 @@ class Handler(library.Handler):
                 sources = (catalog()['by_path'].get(SOURCES_PAGE) or {}).get('id')
                 return self.send_json({**{k: s.get(k) for k in ('resources', 'pdfs', 'pdf_pages', 'web_pages', 'videos', 'collections', 'document_bytes')},
                                        'zims': zim_names(), 'sources': sources, 'pack': bool(pack_info()),
-                                       'pins': bool(map_contents()['layers']) if pack_info() else True})
+                                        'pins': bool(map_contents()['layers'] or (regional_maps.info(HERE) or {}).get('layers')) if pack_info() else True})
             if path.startswith('/api/') and path not in self.LIBRARY_ROUTES:
                 return self.send_json({'error': 'not found'}, 404)
             return super().do_GET()
